@@ -44,16 +44,6 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      # Step 11: Update Kubernetes Deployment with new image
-      - name: Update Kubernetes Deployment with new image
-        run: |
-          kubectl set image deployment/django-postgres-deployment app=778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos:latest
-
-      # Step 12: Wait for Deployment Rollout
-      - name: Wait for Deployment Rollout
-        run: |
-          kubectl rollout status deployment/django-postgres-deployment
-
       # Optional: Terraform steps to manage infrastructure (if needed)
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v1
