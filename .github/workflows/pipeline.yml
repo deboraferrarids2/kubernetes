@@ -44,18 +44,21 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      # Optional: Terraform steps to manage infrastructure (if needed)
+      # Terraform steps to manage infrastructure
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v1
 
       - name: Terraform Init
         run: terraform init
+        working-directory: terraform  # Definir o diretório correto
 
       - name: Terraform Plan
         run: terraform plan
+        working-directory: terraform  # Definir o diretório correto
 
       - name: Terraform Apply
         run: terraform apply -auto-approve
+        working-directory: terraform  # Definir o diretório correto
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
