@@ -1,0 +1,49 @@
+name: CI/CD Pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Step 2: Configure AWS Credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Step 3: Set up kubectl
+      - name: Set up kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          kubectl version --client
+
+      # Step 4: Set up Kubeconfig
+      - name: Configure kubeconfig
+        run: |
+          aws eks update-kubeconfig --name eks-cluster --region us-east-1
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      # Step 5: Update Kubernetes Deployment with new image
+      - name: Update Kubernetes Deployment with new image
+        run: |
+          kubectl set image deployment/django-postgres-deployment app=778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos:latest --record
+
+      # Step 6: Wait for Deployment Rollout
+      - name: Wait for Deployment Rollout
+        run: |
+          kubectl rollout status deployment/django-postgres-deployment
