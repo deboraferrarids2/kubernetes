@@ -43,7 +43,7 @@ jobs:
         run: |
           # Pull the latest image tag from ECR
           IMAGE_URI=778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos:latest
-          kubectl set image deployment/django-postgres-deployment app=${IMAGE_URI} --record
+          kubectl set image deployment/django-postgres-deployment app=${IMAGE_URI}
 
       # Step 6: Wait for Deployment Rollout
       - name: Wait for Deployment Rollout
