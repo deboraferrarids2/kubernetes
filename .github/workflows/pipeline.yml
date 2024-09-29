@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +22,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      # Step 3: Set up kubectl
+      # Step 5: Log in to Amazon ECR
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          registry-type: private
+
+      # Step 9: Configure kubectl
       - name: Set up kubectl
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -30,7 +36,7 @@ jobs:
           sudo mv kubectl /usr/local/bin/
           kubectl version --client
 
-      # Step 4: Set up Kubeconfig
+      # Step 10: Set up Kubeconfig
       - name: Configure kubeconfig
         run: |
           aws eks update-kubeconfig --name eks-cluster --region us-east-1
@@ -38,14 +44,106 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      # Step 5: Update Kubernetes Deployment with the latest image
-      - name: Update Kubernetes Deployment with latest image
+      # Step 11: Update Kubernetes Deployment with new image
+      - name: Update Kubernetes Deployment with new image
         run: |
-          # Pull the latest image tag from ECR
-          IMAGE_URI=778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos:latest
-          kubectl set image deployment/django-postgres-deployment app=${IMAGE_URI}
+          kubectl set image deployment/django-postgres-deployment app=778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos:latest
 
-      # Step 6: Wait for Deployment Rollout
+      # Step 12: Wait for Deployment Rollout
       - name: Wait for Deployment Rollout
         run: |
           kubectl rollout status deployment/django-postgres-deployment
+
+      # Optional: Terraform steps to manage infrastructure (if needed)
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v1
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+
+    # steps:
+    #   - name: Checkout repository
+    #     uses: actions/checkout@v2
+
+    #   - name: Set up Docker Buildx
+    #     uses: docker/setup-buildx-action@v1
+
+    #   - name: Configure AWS Credentials
+    #     uses: aws-actions/configure-aws-credentials@v1
+    #     with:
+    #       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    #       aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    #       aws-region: us-east-1
+
+    #   - name: Install Docker Compose and JQ
+    #     run: |
+    #       sudo apt-get update
+    #       sudo apt-get install -y docker-compose jq
+
+    #   - name: Log in to Amazon ECR
+    #     uses: aws-actions/amazon-ecr-login@v1
+    #     with:
+    #       registry-type: private
+
+    #   - name: Build Docker Image
+    #     run: |
+    #       docker-compose build
+
+    #   - name: Tag Docker Image
+    #     run: |
+    #       docker tag deboraferrarids2/challenge_web:latest 778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos:latest
+
+    #   - name: Push Docker Image to ECR
+    #     run: |
+    #       docker push 778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos:latest
+
+    #   - name: Download Current Task Definition
+    #     run: |
+    #       aws ecs describe-task-definition --task-definition fargate-task-definition --query taskDefinition --output json > task-definition.json
+
+    #   - name: Update ECS Task Definition
+    #     env:
+    #       TASK_FAMILY: "fargate-task-definition"
+    #       AWS_DOCKER_IMAGE: "778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos"
+    #       VERSAO: "latest"
+    #       ECS_CLUSTER: "devcluster"
+    #       SERVICE_NAME: "devclusterservice"
+    #     run: |
+    #       TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition "${TASK_FAMILY}")
+
+    #       NEW_TASK_DEFINITION=$(echo "$TASK_DEFINITION" | jq --arg IMAGE "${AWS_DOCKER_IMAGE}:${VERSAO}" '
+    #         .taskDefinition | 
+    #         .containerDefinitions[0].image = $IMAGE | 
+    #         del(.taskDefinitionArn) | 
+    #         del(.revision) | 
+    #         del(.status) | 
+    #         del(.requiresAttributes) | 
+    #         del(.compatibilities) |  
+    #         del(.registeredAt) |  
+    #         del(.registeredBy)')
+
+    #       NEW_TASK_INFO=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEFINITION")
+
+    #       NEW_REVISION=$(echo "$NEW_TASK_INFO" | jq '.taskDefinition.revision')
+
+    #       # Atualiza o serviço com a nova definição de tarefa
+    #       aws ecs update-service --cluster "${ECS_CLUSTER}" --service "${SERVICE_NAME}" --task-definition "${TASK_FAMILY}:${NEW_REVISION}"
+
+    #       # Salva o ARN da nova tarefa para uso posterior
+    #       echo "task-definition-arn=${TASK_FAMILY}:${NEW_REVISION}" >> $GITHUB_ENV
+
+    #   - name: Run Migrations
+    #     run: |
+    #       OVERRIDES='{"containerOverrides":[{"name":"devcontainer","command":["bash","-c","python manage.py makemigrations && python manage.py migrate"]}]}'
+    #       echo "$OVERRIDES"  # Para debugar a string JSON
+    #       aws ecs run-task --cluster devcluster --launch-type FARGATE --task-definition "fargate-task-definition:6" --overrides "$OVERRIDES"
