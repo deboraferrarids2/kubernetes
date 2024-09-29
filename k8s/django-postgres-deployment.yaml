@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django-postgres-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: django-postgres
+  template:
+    metadata:
+      labels:
+        app: django-postgres
+    spec:
+      containers:
+      # - name: db
+      #   image: postgres:latest
+      #   ports:
+      #   - containerPort: 5432
+      #   envFrom:
+      #   - configMapRef:
+      #       name: db-config
+      #   - secretRef:
+      #       name: db-secret
+      #   volumeMounts:
+      #   - mountPath: /var/lib/postgresql/data
+      #     name: postgres-data
+      - name: app
+        image: 778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos:latest
+        ports:
+        - containerPort: 5000
+        envFrom:
+        - configMapRef:
+            name: db-config    
+        - secretRef:
+            name: db-secret       
+        command: ["/bin/sh", "-c", "sleep 10 && python /usr/src/app/manage.py makemigrations && python /usr/src/app/manage.py migrate && python /usr/src/app/manage.py populate_products && python /usr/src/app/manage.py create_superuser && python /usr/src/app/manage.py runserver 0.0.0.0:5000"]
+        livenessProbe:
+          httpGet:
+            path: /products/
+            port: 5000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+      # volumes:
+      # - name: postgres-data
+      #   persistentVolumeClaim:
+      #     claimName: postgres-pvc
