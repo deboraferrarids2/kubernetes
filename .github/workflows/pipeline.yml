@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -38,10 +38,12 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      # Step 5: Update Kubernetes Deployment with new image
-      - name: Update Kubernetes Deployment with new image
+      # Step 5: Update Kubernetes Deployment with the latest image
+      - name: Update Kubernetes Deployment with latest image
         run: |
-          kubectl set image deployment/django-postgres-deployment app=778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos:latest --record
+          # Pull the latest image tag from ECR
+          IMAGE_URI=778862303728.dkr.ecr.us-east-1.amazonaws.com/apieventos:latest
+          kubectl set image deployment/django-postgres-deployment app=${IMAGE_URI} --record
 
       # Step 6: Wait for Deployment Rollout
       - name: Wait for Deployment Rollout
