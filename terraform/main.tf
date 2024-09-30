@@ -1,162 +1,99 @@
 provider "aws" {
-  region = "us-east-1"
+  region = "us-east-1"  
 }
 
-# Data source to get available availability zones
-data "aws_availability_zones" "available" {}
+# Criar o cluster EKS (agora importado)
+resource "aws_eks_cluster" "this" {
+  name     = var.cluster_name
+  role_arn = var.cluster_role_arn
 
-# Data source to check for existing VPC
-data "aws_vpc" "existing" {
-  filter {
-    name   = "tag:Name"
-    values = ["eks-vpc"]
-  }
-}
-
-# Create VPC if not exists
-resource "aws_vpc" "main" {
-  count = length(data.aws_vpc.existing.id) == 0 ? 1 : 0  # Use 'id' here
-
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_support   = true
-  enable_dns_hostnames = true
-  tags = {
-    Name = "eks-vpc"
-  }
-}
-
-# Create public subnets
-resource "aws_subnet" "public" {
-  count = 2
-  vpc_id = length(data.aws_vpc.existing.id) > 0 ? data.aws_vpc.existing.id : aws_vpc.main[0].id  # Use 'id'
-
-  cidr_block = "10.0.${count.index}.0/24"
-  availability_zone = element(data.aws_availability_zones.available.names, count.index)
-
-  tags = {
-    Name = "public-subnet-${count.index}"
-    Tier  = "public"
-  }
-}
-
-# Create private subnets
-resource "aws_subnet" "private" {
-  count = 2
-  vpc_id = length(data.aws_vpc.existing.id) > 0 ? data.aws_vpc.existing.id : aws_vpc.main[0].id  # Use 'id'
-
-  cidr_block = "10.0.${count.index + 2}.0/24"
-  availability_zone = element(data.aws_availability_zones.available.names, count.index)
-
-  tags = {
-    Name = "private-subnet-${count.index}"
-    Tier  = "private"
-  }
-}
-
-# Create an internet gateway
-resource "aws_internet_gateway" "igw" {
-  vpc_id = length(data.aws_vpc.existing.id) > 0 ? data.aws_vpc.existing.id : aws_vpc.main[0].id  # Use 'id'
-
-  tags = {
-    Name = "eks-igw"
-  }
-}
-
-# Create a route table for the public subnet
-resource "aws_route_table" "public" {
-  vpc_id = length(data.aws_vpc.existing.id) > 0 ? data.aws_vpc.existing.id : aws_vpc.main[0].id  # Use 'id'
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-
-  tags = {
-    Name = "public-route-table"
-  }
-}
-
-# Associate the route table with public subnets
-resource "aws_route_table_association" "public" {
-  count = 2
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
-}
-
-# Create IAM role for EKS
-resource "aws_iam_role" "eks_role" {
-  name = "eks-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "eks.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "eks_policy_attach" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.eks_role.name
-}
-
-# Create the EKS cluster
-resource "aws_eks_cluster" "eks" {
-  name     = "eks-cluster"
-  role_arn = aws_iam_role.eks_role.arn
-
+  version  = "1.30"  # Versão do Kubernetes
+  bootstrap_self_managed_addons = false
   vpc_config {
-    subnet_ids = [
-      aws_subnet.private[0].id,
-      aws_subnet.private[1].id,
-    ]
+    subnet_ids = var.subnet_ids
+  }
+}
+
+# Definindo o papel IAM para o grupo de nós do EKS
+resource "aws_iam_role" "node_role" {
+  name               = "node-role"
+  assume_role_policy = data.aws_iam_policy_document.eks_assume_role_policy.json
+}
+
+# Criando a política de confiança do papel
+data "aws_iam_policy_document" "eks_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["eks.amazonaws.com"]
+    }
   }
 
-  depends_on = [aws_iam_role_policy_attachment.eks_policy_attach]
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]  # Adicionando o serviço EC2
+    }
+  }
 }
 
-# Create IAM role for Fargate
-resource "aws_iam_role" "eks_fargate_role" {
-  name = "eks-fargate-role"
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole",
-        Effect = "Allow",
-        Principal = {
-          Service = "eks-fargate-pods.amazonaws.com"  # Service Principal for Fargate
-        },
-      },
-    ],
-  })
+# Anexando as políticas necessárias ao papel
+resource "aws_iam_role_policy_attachment" "worker_node_policy" {
+  role       = aws_iam_role.node_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
 
-resource "aws_iam_role_policy_attachment" "fargate_policy_attach" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy"
-  role       = aws_iam_role.eks_fargate_role.name
+resource "aws_iam_role_policy_attachment" "cni_policy" {
+  role       = aws_iam_role.node_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
-# Create the Fargate profile
-resource "aws_eks_fargate_profile" "fargate_profile" {
-  cluster_name           = aws_eks_cluster.eks.name
-  fargate_profile_name   = "my-fargate-profile"
-  pod_execution_role_arn = aws_iam_role.eks_fargate_role.arn
-  subnet_ids             = [
-    aws_subnet.private[0].id,
-    aws_subnet.private[1].id,
-  ]
+resource "aws_iam_role_policy_attachment" "ec2_policy" {
+  role       = aws_iam_role.node_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess" # ajuste conforme necessário
+}
 
-  selector {
-    namespace = "default"
+# Criar o grupo de nós
+resource "aws_eks_node_group" "this" {
+  cluster_name    = aws_eks_cluster.this.name
+  node_group_name = "your-node-group-name"  # Nome do grupo de nós
+  node_role_arn   = aws_iam_role.node_role.arn  # Referência ao papel node-role
+  subnet_ids      = var.subnet_ids
+
+  instance_types  = [var.instance_type]  # Deve ser uma lista
+
+  scaling_config {
+    desired_size = var.desired_size
+    min_size     = var.min_size
+    max_size     = var.max_size
   }
 
-  depends_on = [aws_eks_cluster.eks]
+  depends_on = [aws_eks_cluster.this]
+}
+
+# Configuração do provider Kubernetes
+provider "kubernetes" {
+  host                   = aws_eks_cluster.this.endpoint
+  token                  = data.aws_eks_cluster_auth.cluster.token
+  cluster_ca_certificate = base64decode(aws_eks_cluster.this.certificate_authority[0].data)
+}
+
+# Aplica as configurações do Kubernetes
+resource "null_resource" "k8s_apply" {
+  provisioner "local-exec" {
+    command = "kubectl apply -f k8s/"
+  }
+
+  triggers = {
+    always_run = "${timestamp()}"  # Força a execução sempre que o Terraform é aplicado
+  }
+
+  depends_on = [aws_eks_node_group.this]
+}
+
+data "aws_eks_cluster_auth" "cluster" {
+  name = aws_eks_cluster.this.name
 }
