@@ -1,6 +1,6 @@
 cluster_name = "eks-cluster"
 cluster_role_arn = "arn:aws:iam::778862303728:role/eks-role"
-node_role_arn = "arn:aws:iam::778862303728:role/aws-service-role/eks-nodegroup.amazonaws.com/AWSServiceRoleForAmazonEKSNodegroup"
+node_role_arn = "arn:aws:iam::778862303728:instance-profile/new-node-role"
 desired_size = 2
 max_size = 3
 min_size = 1
